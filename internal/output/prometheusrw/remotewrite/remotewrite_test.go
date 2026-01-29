@@ -88,7 +88,7 @@ func TestOutputConvertToPbSeries(t *testing.T) {
 	require.NoError(t, o.setTrendStatsResolver([]string{"p(90)", "p(95)", "max"}))
 
 	pbseries := o.convertToPbSeries(samples)
-	require.Len(t, pbseries, 6)
+	require.Len(t, pbseries, 8) // metric3 Rate now emits rate, count, and gauge
 	require.Len(t, o.tsdb, 4)
 
 	unix1sept := int64(1661990400 * 1000) // in ms
@@ -109,6 +109,24 @@ func TestOutputConvertToPbSeries(t *testing.T) {
 			},
 			Samples: []*prompb.Sample{
 				{Value: 2, Timestamp: unix1sept},
+			},
+		},
+		{
+			Labels: []*prompb.Label{
+				{Name: "__name__", Value: "k6_metric3_count"},
+				{Name: "tagk1", Value: "tagv1"},
+			},
+			Samples: []*prompb.Sample{
+				{Value: 1, Timestamp: unix1sept},
+			},
+		},
+		{
+			Labels: []*prompb.Label{
+				{Name: "__name__", Value: "k6_metric3_gauge"},
+				{Name: "tagk1", Value: "tagv1"},
+			},
+			Samples: []*prompb.Sample{
+				{Value: 1, Timestamp: unix1sept},
 			},
 		},
 		{
@@ -365,6 +383,10 @@ func TestOutputStaleMarkers(t *testing.T) {
 		Metric: registry.MustNewMetric("metric2", metrics.Counter),
 		Tags:   registry.RootTagSet(),
 	}
+	rateSinkSeries := metrics.TimeSeries{
+		Metric: registry.MustNewMetric("metric3", metrics.Rate),
+		Tags:   registry.RootTagSet(),
+	}
 
 	o := Output{
 		now: func() time.Time {
@@ -387,13 +409,17 @@ func TestOutputStaleMarkers(t *testing.T) {
 			TimeSeries: counterSinkSeries,
 			Measure:    &metrics.CounterSink{},
 		},
+		rateSinkSeries: {
+			TimeSeries: rateSinkSeries,
+			Measure:    &metrics.RateSink{},
+		},
 	}
 
 	markers := o.staleMarkers()
-	require.Len(t, markers, 2)
+	require.Len(t, markers, 5) // trend (1) + counter (1) + rate (3: rate + count + gauge)
 
 	sortByNameLabel(markers)
-	expNameLabels := []string{"k6_metric1_p99", "k6_metric2_total"}
+	expNameLabels := []string{"k6_metric1_p99", "k6_metric2_total", "k6_metric3_count", "k6_metric3_gauge", "k6_metric3_rate"}
 	expTimestamp := time.Unix(1, int64(1*time.Millisecond)).UnixMilli()
 	for i, expName := range expNameLabels {
 		assert.Equal(t, expName, markers[i].Labels[0].Value)

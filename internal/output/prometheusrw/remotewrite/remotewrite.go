@@ -338,11 +338,24 @@ func (swm seriesWithMeasure) MapPrompb() []*prompb.TimeSeries {
 		newts = []*prompb.TimeSeries{&ts}
 
 	case metrics.Rate:
-		ts := mapMonoSeries(swm.TimeSeries, "rate", swm.Latest)
+		rateSink := swm.Measure.(*metrics.RateSink)
 		// pass zero duration here because time is useless for formatting rate
-		rateVals := swm.Measure.(*metrics.RateSink).Format(time.Duration(0))
-		ts.Samples[0].Value = rateVals["rate"]
-		newts = []*prompb.TimeSeries{&ts}
+		rateVals := rateSink.Format(time.Duration(0))
+		
+		// Emit rate metric
+		tsRate := mapMonoSeries(swm.TimeSeries, "rate", swm.Latest)
+		tsRate.Samples[0].Value = rateVals["rate"]
+		
+		// Emit count metric as counter
+		tsCount := mapMonoSeries(swm.TimeSeries, "count", swm.Latest)
+		tsCount.Samples[0].Value = float64(rateSink.Total)
+		
+		// Emit gauge metric for easier aggregation in Grafana
+		// (no need to handle counter resets with increase())
+		tsGauge := mapMonoSeries(swm.TimeSeries, "gauge", swm.Latest)
+		tsGauge.Samples[0].Value = float64(rateSink.Total)
+		
+		newts = []*prompb.TimeSeries{&tsRate, &tsCount, &tsGauge}
 
 	case metrics.Trend:
 		// TODO:
